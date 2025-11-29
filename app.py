@@ -1,7 +1,8 @@
 import streamlit as st
-import cv2
 import numpy as np
 from PIL import Image
+from skimage import filters, io
+import io as io_module
 
 st.set_page_config(page_title="Lane Detection", page_icon="🛣️", layout="wide")
 
@@ -16,29 +17,25 @@ if uploaded_file is not None:
     image = Image.open(uploaded_file)
     img_array = np.array(image)
     
+    # Convert to grayscale
     if len(img_array.shape) == 3:
-        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        gray = np.mean(img_array, axis=2) / 255.0
     else:
-        gray = img_array
-    
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        gray = img_array / 255.0
     
     if method == "Canny":
-        threshold1 = st.sidebar.slider("Threshold 1", 50, 200, 100)
-        threshold2 = st.sidebar.slider("Threshold 2", 100, 400, 200)
-        edges = cv2.Canny(blurred, threshold1, threshold2)
-    
+        threshold1 = st.sidebar.slider("Threshold 1", 0.0, 1.0, 0.1)
+        threshold2 = st.sidebar.slider("Threshold 2", 0.0, 1.0, 0.2)
+        edges = filters.sobel(gray)
+        edges = (edges > threshold2).astype(float)
+        
     elif method == "Sobel":
-        kernel_size = st.sidebar.slider("Kernel Size", 1, 7, 3)
-        kernel_size = kernel_size * 2 + 1
-        sobelx = cv2.Sobel(blurred, cv2.CV_64F, 1, 0, ksize=kernel_size)
-        sobely = cv2.Sobel(blurred, cv2.CV_64F, 0, 1, ksize=kernel_size)
-        edges = np.hypot(sobelx, sobely)
-        edges = np.uint8(255 * edges / np.max(edges))
-    
-    else:
-        edges = cv2.Laplacian(blurred, cv2.CV_64F)
-        edges = np.uint8(np.absolute(edges))
+        edges = filters.sobel(gray)
+        edges = (edges * 255).astype(np.uint8)
+        
+    else:  # Laplacian
+        edges = filters.laplace(gray)
+        edges = np.uint8(np.absolute(edges) * 255 / np.max(np.absolute(edges)))
     
     col1, col2 = st.columns(2)
     
@@ -48,15 +45,21 @@ if uploaded_file is not None:
     
     with col2:
         st.subheader(f"{method} Detection")
-        st.image(edges, use_column_width=True, channels="GRAY")
+        edges_display = (edges * 255).astype(np.uint8) if edges.max() <= 1 else edges
+        st.image(edges_display, use_column_width=True, channels="GRAY")
     
-    _, buffer = cv2.imencode('.png', edges)
+    # Download
+    from PIL import Image as PILImage
+    result_image = PILImage.fromarray((edges * 255).astype(np.uint8) if edges.max() <= 1 else edges)
+    buf = io_module.BytesIO()
+    result_image.save(buf, format="PNG")
+    buf.seek(0)
+    
     st.download_button(
         label="📥 Download Result",
-        data=buffer.tobytes(),
+        data=buf.getvalue(),
         file_name=f"lanes_{method}.png",
         mime="image/png"
     )
-
 else:
     st.info("👆 Upload an image to start")
