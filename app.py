@@ -1,41 +1,26 @@
 import streamlit as st
 import numpy as np
-from PIL import Image
-from skimage import filters, io
-import io as io_module
+from PIL import Image, ImageFilter, ImageOps
+import io
 
 st.set_page_config(page_title="Lane Detection", page_icon="🛣️", layout="wide")
 
 st.title("🛣️ Lane Detection App")
 st.write("Upload a road image to detect lanes")
 
-method = st.sidebar.radio("Detection Method:", ["Canny", "Sobel", "Laplacian"])
+method = st.sidebar.radio("Detection Method:", ["Edge Detection", "Blur", "Contrast"])
 
 uploaded_file = st.file_uploader("Upload Image:", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file)
-    img_array = np.array(image)
     
-    # Convert to grayscale
-    if len(img_array.shape) == 3:
-        gray = np.mean(img_array, axis=2) / 255.0
-    else:
-        gray = img_array / 255.0
-    
-    if method == "Canny":
-        threshold1 = st.sidebar.slider("Threshold 1", 0.0, 1.0, 0.1)
-        threshold2 = st.sidebar.slider("Threshold 2", 0.0, 1.0, 0.2)
-        edges = filters.sobel(gray)
-        edges = (edges > threshold2).astype(float)
-        
-    elif method == "Sobel":
-        edges = filters.sobel(gray)
-        edges = (edges * 255).astype(np.uint8)
-        
-    else:  # Laplacian
-        edges = filters.laplace(gray)
-        edges = np.uint8(np.absolute(edges) * 255 / np.max(np.absolute(edges)))
+    if method == "Edge Detection":
+        processed = image.filter(ImageFilter.FIND_EDGES)
+    elif method == "Blur":
+        processed = image.filter(ImageFilter.GaussianBlur(radius=2))
+    else:  # Contrast
+        processed = ImageOps.autocontrast(image)
     
     col1, col2 = st.columns(2)
     
@@ -44,15 +29,12 @@ if uploaded_file is not None:
         st.image(image, use_column_width=True)
     
     with col2:
-        st.subheader(f"{method} Detection")
-        edges_display = (edges * 255).astype(np.uint8) if edges.max() <= 1 else edges
-        st.image(edges_display, use_column_width=True, channels="GRAY")
+        st.subheader(f"{method} Result")
+        st.image(processed, use_column_width=True)
     
     # Download
-    from PIL import Image as PILImage
-    result_image = PILImage.fromarray((edges * 255).astype(np.uint8) if edges.max() <= 1 else edges)
-    buf = io_module.BytesIO()
-    result_image.save(buf, format="PNG")
+    buf = io.BytesIO()
+    processed.save(buf, format="PNG")
     buf.seek(0)
     
     st.download_button(
